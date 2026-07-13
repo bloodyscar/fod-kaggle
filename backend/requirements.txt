@@ -1,0 +1,10 @@
+fastapi>=0.111
+uvicorn[standard]>=0.30
+onnxruntime>=1.18
+# If you have an NVIDIA GPU + CUDA installed, use this instead for much
+# lower inference latency (uninstall onnxruntime first):
+#   pip uninstall onnxruntime
+#   pip install onnxruntime-gpu>=1.18
+opencv-python-headless>=4.9
+numpy>=1.26
+websockets>=12.0
