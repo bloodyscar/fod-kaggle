@@ -81,9 +81,18 @@
   let detectTimestamps = [];
 
   // ---- Colors: deterministic, evenly spaced hue per class id ----
+  function classHue(classId) {
+    return ((classId * 137.508) % 360).toFixed(0); // golden angle -> good spread
+  }
+
+  /** Bright variant — reticles and chips drawn over the dark video frame. */
   function colorForClass(classId) {
-    const hue = (classId * 137.508) % 360; // golden angle -> good spread
-    return `hsl(${hue.toFixed(0)}, 82%, 62%)`;
+    return `hsl(${classHue(classId)}, 82%, 62%)`;
+  }
+
+  /** Darkened variant — the same hue used as text on the white panels. */
+  function textColorForClass(classId) {
+    return `hsl(${classHue(classId)}, 72%, 32%)`;
   }
 
   // ==========================================================================
@@ -439,7 +448,7 @@
         const time = new Date().toLocaleTimeString([], { hour12: false });
         li.innerHTML = `
           <span class="ev-time">${time}</span>
-          <span class="ev-class" style="color:${colorForClass(classId)}">${API.escapeHtml(det.class_name)}</span>
+          <span class="ev-class" style="color:${textColorForClass(classId)}">${API.escapeHtml(det.class_name)}</span>
           ${det.risk_level ? `<span class="ev-risk">${API.riskBadge(det.risk_level)}</span>` : ""}
           <span class="ev-conf">${(det.conf * 100).toFixed(0)}%</span>
         `;

@@ -7,8 +7,8 @@
   "use strict";
 
   const REFRESH_MS = 30000;
-  const AXIS = "#565f70";
-  const GRID = "#1a212c";
+  const AXIS = "#5b6675";
+  const GRID = "#e8ecf2";
 
   // Runway surface rect in SVG units — markers are mapped into this box.
   const RUNWAY = { x: 60, y: 70, w: 680, h: 110 };
@@ -53,8 +53,8 @@
         datasets: [{
           label: "Temuan FOD",
           data: data.daily_counts,
-          backgroundColor: "rgba(255,182,39,0.55)",
-          borderColor: "#ffb627",
+          backgroundColor: "rgba(207,132,0,0.55)",
+          borderColor: "#cf8400",
           borderWidth: 1,
           borderRadius: 3,
           maxBarThickness: 44,
@@ -82,7 +82,7 @@
         datasets: [{
           data: data.level_counts,
           backgroundColor: data.level_labels.map((l) => API.RISK_COLORS[l] || "#8b93a3"),
-          borderColor: "#10141b",
+          borderColor: "#ffffff",
           borderWidth: 2,
         }],
       },
@@ -93,7 +93,7 @@
         plugins: {
           legend: {
             position: "right",
-            labels: { color: "#8b93a3", boxWidth: 12, padding: 12 },
+            labels: { color: "#5b6675", boxWidth: 12, padding: 12 },
           },
         },
       },
