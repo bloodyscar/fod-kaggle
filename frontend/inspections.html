@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Inspeksi — FOD Sentry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+
+<div id="pageContent" hidden>
+
+  <section class="kpi-grid">
+    <article class="kpi" style="--accent: var(--amber)">
+      <span class="kpi-label">Open</span>
+      <span class="kpi-value" id="kOpen">—</span>
+      <span class="kpi-sub">belum ditangani</span>
+    </article>
+    <article class="kpi" style="--accent: #6096ff">
+      <span class="kpi-label">Sedang diproses</span>
+      <span class="kpi-value" id="kProses">—</span>
+      <span class="kpi-sub">petugas di lokasi</span>
+    </article>
+    <article class="kpi" style="--accent: var(--teal)">
+      <span class="kpi-label">Selesai</span>
+      <span class="kpi-value" id="kSelesai">—</span>
+      <span class="kpi-sub">runway sudah bersih</span>
+    </article>
+    <article class="kpi" style="--accent: var(--red)">
+      <span class="kpi-label">Critical menunggu</span>
+      <span class="kpi-value" id="kCritical">—</span>
+      <span class="kpi-sub">prioritas tertinggi</span>
+    </article>
+  </section>
+
+  <div class="filters">
+    <div class="filter-field">
+      <label for="fStatus">Status</label>
+      <select class="select slim" id="fStatus">
+        <option value="">Semua</option>
+        <option value="open">Open</option>
+        <option value="proses">Proses</option>
+        <option value="selesai">Selesai</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>&nbsp;</label>
+      <button class="secondary-btn" id="reloadBtn">Muat ulang</button>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Riwayat penanganan FOD</h2>
+      <span class="count-badge" id="rowCount">0</span>
+    </div>
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Waktu deteksi</th>
+            <th>Objek</th>
+            <th>Risiko</th>
+            <th>Status</th>
+            <th>Petugas</th>
+            <th class="num">Waktu respon</th>
+            <th>Catatan</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="8" class="row-empty">Memuat…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Handle modal ============ -->
+<div class="modal-backdrop" id="handleModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="handleTitle">Perbarui penanganan</h3>
+      <button class="close-btn" id="handleClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="handleContext" class="recommend-box" style="margin-top:0"></div>
+
+      <label class="field-label" for="hStatus">Status penanganan</label>
+      <select class="select" id="hStatus">
+        <option value="open">Open — belum ditangani</option>
+        <option value="proses">Proses — petugas menuju/di lokasi</option>
+        <option value="selesai">Selesai — FOD diambil, area bersih</option>
+      </select>
+
+      <label class="field-label" for="hNotes">Catatan petugas</label>
+      <textarea class="textarea" id="hNotes" maxlength="2000"
+                placeholder="Contoh: Baut diambil di sekitar centerline, area diverifikasi bersih."></textarea>
+
+      <p class="hint" id="handleMeta"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="secondary-btn" id="handleCancel">Batal</button>
+      <button class="primary-btn" id="handleSave">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/inspections.js"></script>
+</body>
+</html>

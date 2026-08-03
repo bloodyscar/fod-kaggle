@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard — FOD Sentry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+
+<div id="pageContent" hidden>
+
+  <!-- ============ KPI ============ -->
+  <section class="kpi-grid">
+    <article class="kpi" style="--accent: var(--amber)">
+      <span class="kpi-label">Temuan hari ini</span>
+      <span class="kpi-value" id="kpiToday">—</span>
+      <span class="kpi-sub" id="kpiTotal">total keseluruhan —</span>
+    </article>
+    <article class="kpi" style="--accent: var(--red)">
+      <span class="kpi-label">Critical + High</span>
+      <span class="kpi-value" id="kpiAlert">—</span>
+      <span class="kpi-sub" id="kpiAlertSub">dari seluruh riwayat</span>
+    </article>
+    <article class="kpi" style="--accent: var(--orange)">
+      <span class="kpi-label">Inspeksi belum ditangani</span>
+      <span class="kpi-value" id="kpiOpen">—</span>
+      <span class="kpi-sub" id="kpiOpenSub">status open</span>
+    </article>
+    <article class="kpi" style="--accent: var(--teal)">
+      <span class="kpi-label">Rata-rata waktu respon</span>
+      <span class="kpi-value" id="kpiResponse">—</span>
+      <span class="kpi-sub">deteksi → mulai ditangani</span>
+    </article>
+  </section>
+
+  <!-- ============ Charts ============ -->
+  <section class="grid-2">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Temuan FOD — 7 hari terakhir</h2>
+      </div>
+      <div class="panel-body">
+        <div class="chart-box"><canvas id="dailyChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Distribusi level risiko</h2>
+      </div>
+      <div class="panel-body">
+        <div class="chart-box"><canvas id="levelChart"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Runway map + weather ============ -->
+  <section class="grid-map">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Peta Runway — 24 jam terakhir</h2>
+        <span class="panel-note">posisi estimasi (belum terkalibrasi)</span>
+      </div>
+      <div class="panel-body">
+        <!-- Static 2D runway. Marker positions are a linear mapping of the
+             bbox centre onto this rectangle — deliberately labelled as an
+             estimate because there is no perspective calibration. -->
+        <svg class="runway-svg" id="runwaySvg" viewBox="0 0 800 250" role="img"
+             aria-label="Skema runway dengan penanda lokasi temuan FOD">
+          <defs>
+            <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stop-color="#161b23"/>
+              <stop offset="100%" stop-color="#0f131a"/>
+            </linearGradient>
+          </defs>
+
+          <rect x="0" y="0" width="800" height="250" fill="#0b0f15" rx="8"/>
+
+          <!-- grass shoulders -->
+          <rect x="30" y="52" width="740" height="146" fill="#0d1219" rx="4"/>
+          <!-- runway surface -->
+          <rect x="60" y="70" width="680" height="110" fill="url(#asphalt)"
+                stroke="#2b3442" stroke-width="1"/>
+
+          <!-- threshold bars -->
+          <g fill="#5c6675">
+            <rect x="66"  y="80"  width="16" height="12"/>
+            <rect x="66"  y="98"  width="16" height="12"/>
+            <rect x="66"  y="116" width="16" height="12"/>
+            <rect x="66"  y="134" width="16" height="12"/>
+            <rect x="66"  y="152" width="16" height="12"/>
+            <rect x="718" y="80"  width="16" height="12"/>
+            <rect x="718" y="98"  width="16" height="12"/>
+            <rect x="718" y="116" width="16" height="12"/>
+            <rect x="718" y="134" width="16" height="12"/>
+            <rect x="718" y="152" width="16" height="12"/>
+          </g>
+
+          <!-- centerline -->
+          <line x1="100" y1="125" x2="700" y2="125" stroke="#4a5361"
+                stroke-width="2.5" stroke-dasharray="26 18"/>
+
+          <!-- labels -->
+          <text x="60"  y="42" fill="#565f70" font-family="JetBrains Mono, monospace"
+                font-size="12" letter-spacing="1.5">THR&nbsp;A</text>
+          <text x="740" y="42" fill="#565f70" font-family="JetBrains Mono, monospace"
+                font-size="12" letter-spacing="1.5" text-anchor="end">THR&nbsp;B</text>
+          <text x="400" y="222" fill="#565f70" font-family="JetBrains Mono, monospace"
+                font-size="11" text-anchor="middle" letter-spacing="1.2">
+            BANDARA DOUW ATURURE — NABIRE (proporsi placeholder)
+          </text>
+
+          <!-- markers injected here -->
+          <g id="markerLayer"></g>
+        </svg>
+
+        <div class="map-legend" id="mapLegend"></div>
+        <div class="map-tip" id="mapTip"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Cuaca Nabire</h2>
+        <span class="stale-tag" id="weatherStale">data lama</span>
+      </div>
+      <div class="panel-body">
+        <div class="weather-grid" id="weatherGrid">
+          <div class="weather-hero">
+            <span class="weather-temp" id="wTemp">—</span>
+            <span class="weather-cond" id="wCond">memuat…</span>
+          </div>
+          <div class="weather-item">
+            <span class="weather-key">Kelembapan</span>
+            <span class="weather-val" id="wHumidity">—</span>
+          </div>
+          <div class="weather-item">
+            <span class="weather-key">Angin</span>
+            <span class="weather-val" id="wWind">—</span>
+          </div>
+          <div class="weather-item">
+            <span class="weather-key">Visibilitas</span>
+            <span class="weather-val" id="wVisibility">—</span>
+          </div>
+          <div class="weather-item">
+            <span class="weather-key">Curah hujan</span>
+            <span class="weather-val" id="wPrecip">—</span>
+          </div>
+        </div>
+        <p class="hint" id="wObserved">Sumber: Open-Meteo · diperbarui tiap 10 menit.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Recent inspections ============ -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>10 inspeksi terakhir</h2>
+      <a class="ghost-btn" href="inspections.html">Lihat semua</a>
+    </div>
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Waktu deteksi</th>
+            <th>Objek</th>
+            <th>Risiko</th>
+            <th>Status</th>
+            <th>Petugas</th>
+            <th class="num">Waktu respon</th>
+          </tr>
+        </thead>
+        <tbody id="recentBody">
+          <tr><td colspan="6" class="row-empty">Memuat…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/dashboard.js"></script>
+</body>
+</html>

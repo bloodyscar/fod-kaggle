@@ -1,18 +1,22 @@
 /* ==========================================================================
-   FOD Sentry — client
+   FOD Sentry — live detection client
    Captures the webcam, streams JPEG frames to the backend over a WebSocket
    (one frame in flight at a time = automatic backpressure so the stream
    never lags behind a slow network or a slow model), and paints detections
    on a canvas every animation frame regardless of when the next server
    reply arrives — so the video always looks smooth even if detections
    update a little slower than the camera.
+
+   Carried over from the prototype's app.js. New here: the risk badge on each
+   box, the three server-side pre-processing toggles, and the camera label that
+   gets stored with every recorded detection.
    ========================================================================== */
 
 (() => {
   "use strict";
 
   // ---- DOM ----
-  const videoEl        = document.getElementById("video");
+  const videoEl         = document.getElementById("video");
   const stageCanvas     = document.getElementById("stage");
   const stageCtx        = stageCanvas.getContext("2d");
   const sendCanvas      = document.getElementById("sendCanvas");
@@ -36,11 +40,9 @@
   const fpsCapSlider    = document.getElementById("fpsCapSlider");
   const fpsCapVal       = document.getElementById("fpsCapVal");
 
-  const connChip        = document.getElementById("connChip");
-  const connDot         = document.getElementById("connDot");
-  const connLabel       = document.getElementById("connLabel");
-  const providerLabel   = document.getElementById("providerLabel");
-  const classCountLabel = document.getElementById("classCountLabel");
+  const cbDenoise       = document.getElementById("cbDenoise");
+  const cbClahe         = document.getElementById("cbClahe");
+  const cbSharpen       = document.getElementById("cbSharpen");
 
   const roSent          = document.getElementById("roSent");
   const roDetect        = document.getElementById("roDetect");
@@ -51,6 +53,9 @@
   const clearLogBtn     = document.getElementById("clearLog");
   const detectionListEl = document.getElementById("detectionList");
   const activeCountEl   = document.getElementById("activeCount");
+
+  // Injected by layout.js into the topbar.
+  let connChip, connDot, connLabel, providerLabel, classCountLabel;
 
   // ---- State ----
   let ws = null;
@@ -93,7 +98,7 @@
 
       if (cams.length === 0) {
         const opt = document.createElement("option");
-        opt.textContent = "No camera found";
+        opt.textContent = "Kamera tidak ditemukan";
         cameraSelect.appendChild(opt);
         startBtn.disabled = true;
         return;
@@ -124,7 +129,11 @@
     await populateCameraList();
   }
 
-  navigator.mediaDevices.addEventListener?.("devicechange", populateCameraList);
+  /** Whatever the dropdown shows is what gets stored on each detection row. */
+  function selectedCameraLabel() {
+    const opt = cameraSelect.selectedOptions[0];
+    return opt ? opt.textContent.trim() : null;
+  }
 
   // ==========================================================================
   // WebSocket
@@ -146,8 +155,16 @@
       sendConfig();
     };
 
-    ws.onclose = () => {
+    ws.onclose = (evt) => {
       sending = false;
+      // 4401 = the server rejected our cookie. Reconnecting would just loop.
+      if (evt.code === 4401) {
+        isStreaming = false;
+        setConn("error");
+        API.toast("Sesi berakhir — mengalihkan ke halaman login…", true);
+        setTimeout(() => API.redirectToLogin(), 1200);
+        return;
+      }
       if (isStreaming) {
         setConn("connecting");
         scheduleReconnect();
@@ -156,9 +173,7 @@
       }
     };
 
-    ws.onerror = () => {
-      setConn("error");
-    };
+    ws.onerror = () => setConn("error");
 
     ws.onmessage = (evt) => {
       let msg;
@@ -201,7 +216,15 @@
 
   function sendConfig() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "config", conf: confThreshold, iou: iouThreshold }));
+      ws.send(JSON.stringify({
+        type: "config",
+        conf: confThreshold,
+        iou: iouThreshold,
+        denoise: cbDenoise.checked,
+        clahe: cbClahe.checked,
+        sharpen: cbSharpen.checked,
+        camera_label: selectedCameraLabel(),
+      }));
     }
   }
 
@@ -292,6 +315,17 @@
       stageCtx.fillStyle = "#0a0d12";
       stageCtx.fillText(label, x1 + padX, chipY + chipH - padY - 2);
 
+      // risk badge chip, right after the class label
+      if (det.risk_level) {
+        const riskText = `${det.risk_level} ${det.risk_score}/25`;
+        const riskW = stageCtx.measureText(riskText).width;
+        const riskX = x1 + textW + padX * 2 + 4;
+        stageCtx.fillStyle = API.RISK_COLORS[det.risk_level] || "#8b93a3";
+        stageCtx.fillRect(riskX, chipY, riskW + padX * 2, chipH);
+        stageCtx.fillStyle = "#0a0d12";
+        stageCtx.fillText(riskText, riskX + padX, chipY + chipH - padY - 2);
+      }
+
       stageCtx.restore();
     }
   }
@@ -350,7 +384,6 @@
     roSent.textContent = (sentTimestamps.length / 2).toFixed(1);
     roDetect.textContent = (detectTimestamps.length / 2).toFixed(1);
   }
-  setInterval(tickTelemetry, 500);
 
   // ==========================================================================
   // Detection panel + event log
@@ -360,7 +393,7 @@
     activeCountEl.textContent = detections.length;
 
     if (detections.length === 0) {
-      detectionListEl.innerHTML = `<li class="det-empty">No objects currently detected.</li>`;
+      detectionListEl.innerHTML = `<li class="det-empty">Belum ada objek terdeteksi.</li>`;
       return;
     }
 
@@ -368,7 +401,13 @@
     for (const d of detections) {
       const cur = byClass.get(d.class_id);
       if (!cur || d.conf > cur.conf) {
-        byClass.set(d.class_id, { name: d.class_name, conf: d.conf, count: (cur ? cur.count : 0) + 1 });
+        byClass.set(d.class_id, {
+          name: d.class_name,
+          conf: d.conf,
+          level: d.risk_level,
+          score: d.risk_score,
+          count: (cur ? cur.count : 0) + 1,
+        });
       } else {
         cur.count += 1;
       }
@@ -378,8 +417,9 @@
     detectionListEl.innerHTML = rows.map(([classId, info]) => `
       <li class="det-row">
         <span class="det-swatch" style="background:${colorForClass(classId)}"></span>
-        <span class="det-name">${info.name}</span>
+        <span class="det-name">${API.escapeHtml(info.name)}</span>
         ${info.count > 1 ? `<span class="det-count">×${info.count}</span>` : ""}
+        ${info.level ? API.riskBadge(info.level) : ""}
         <span class="det-conf">${(info.conf * 100).toFixed(0)}%</span>
       </li>
     `).join("");
@@ -399,7 +439,8 @@
         const time = new Date().toLocaleTimeString([], { hour12: false });
         li.innerHTML = `
           <span class="ev-time">${time}</span>
-          <span class="ev-class" style="color:${colorForClass(classId)}">${det.class_name}</span>
+          <span class="ev-class" style="color:${colorForClass(classId)}">${API.escapeHtml(det.class_name)}</span>
+          ${det.risk_level ? `<span class="ev-risk">${API.riskBadge(det.risk_level)}</span>` : ""}
           <span class="ev-conf">${(det.conf * 100).toFixed(0)}%</span>
         `;
         eventLogEl.prepend(li);
@@ -410,10 +451,6 @@
     }
     previousClassSet = currentSet;
   }
-
-  clearLogBtn.addEventListener("click", () => {
-    eventLogEl.innerHTML = `<li class="event-empty">Events will appear here once scanning starts.</li>`;
-  });
 
   // ==========================================================================
   // Start / Stop
@@ -443,7 +480,7 @@
       requestAnimationFrame(drawLoop);
     } catch (err) {
       console.error("getUserMedia failed", err);
-      alert("Could not access the camera. Check permissions and that no other app is using it.");
+      API.toast("Kamera tidak bisa diakses. Cek izin dan pastikan tidak dipakai aplikasi lain.", true);
       startBtn.disabled = false;
     }
   }
@@ -483,54 +520,92 @@
     roDetect.textContent = "0.0";
     roLatency.textContent = "0";
     roInfer.textContent = "0";
+
+    // Newly recorded detections are now in the DB — refresh the bell.
+    Layout.pollNotifications();
   }
 
   // ==========================================================================
-  // Controls wiring
+  // Boot
   // ==========================================================================
 
-  videoEl.addEventListener("loadedmetadata", onLoadedMetadata);
-  startBtn.addEventListener("click", start);
-  stopBtn.addEventListener("click", stop);
+  (async () => {
+    const user = await Layout.mount({
+      title: "Deteksi Live",
+      subtitle: "Streaming webcam → YOLOv8 ONNX → skor risiko",
+      topbarExtra: `
+        <div class="status-chip" id="connChip">
+          <span class="dot" id="connDot"></span>
+          <span id="connLabel">OFFLINE</span>
+        </div>
+        <div class="status-chip mono">
+          <span class="chip-label">ENGINE</span>
+          <span id="providerLabel">—</span>
+        </div>
+        <div class="status-chip mono">
+          <span class="chip-label">CLASSES</span>
+          <span id="classCountLabel">31</span>
+        </div>`,
+    });
+    if (!user) return;
 
-  confSlider.addEventListener("input", () => {
-    confThreshold = parseFloat(confSlider.value);
-    confVal.textContent = confThreshold.toFixed(2);
-    sendConfig();
-  });
-  iouSlider.addEventListener("input", () => {
-    iouThreshold = parseFloat(iouSlider.value);
-    iouVal.textContent = iouThreshold.toFixed(2);
-    sendConfig();
-  });
-  resSlider.addEventListener("input", () => {
-    sendWidth = parseInt(resSlider.value, 10);
-    resVal.textContent = `${sendWidth}px`;
-  });
-  qualSlider.addEventListener("input", () => {
-    jpegQuality = parseFloat(qualSlider.value);
-    qualVal.textContent = jpegQuality.toFixed(2);
-  });
-  fpsCapSlider.addEventListener("input", () => {
-    const fps = parseInt(fpsCapSlider.value, 10);
-    minSendInterval = 1000 / fps;
-    fpsCapVal.textContent = `${fps} fps`;
-  });
+    connChip        = document.getElementById("connChip");
+    connDot         = document.getElementById("connDot");
+    connLabel       = document.getElementById("connLabel");
+    providerLabel   = document.getElementById("providerLabel");
+    classCountLabel = document.getElementById("classCountLabel");
 
-  window.addEventListener("beforeunload", () => { if (isStreaming) stop(); });
+    videoEl.addEventListener("loadedmetadata", onLoadedMetadata);
+    startBtn.addEventListener("click", start);
+    stopBtn.addEventListener("click", stop);
 
-  // ---- Init ----
-  (async function init() {
+    confSlider.addEventListener("input", () => {
+      confThreshold = parseFloat(confSlider.value);
+      confVal.textContent = confThreshold.toFixed(2);
+      sendConfig();
+    });
+    iouSlider.addEventListener("input", () => {
+      iouThreshold = parseFloat(iouSlider.value);
+      iouVal.textContent = iouThreshold.toFixed(2);
+      sendConfig();
+    });
+    resSlider.addEventListener("input", () => {
+      sendWidth = parseInt(resSlider.value, 10);
+      resVal.textContent = `${sendWidth}px`;
+    });
+    qualSlider.addEventListener("input", () => {
+      jpegQuality = parseFloat(qualSlider.value);
+      qualVal.textContent = jpegQuality.toFixed(2);
+    });
+    fpsCapSlider.addEventListener("input", () => {
+      const fps = parseInt(fpsCapSlider.value, 10);
+      minSendInterval = 1000 / fps;
+      fpsCapVal.textContent = `${fps} fps`;
+    });
+
+    [cbDenoise, cbClahe, cbSharpen].forEach((cb) =>
+      cb.addEventListener("change", sendConfig)
+    );
+
+    clearLogBtn.addEventListener("click", () => {
+      eventLogEl.innerHTML =
+        `<li class="event-empty">Kejadian akan muncul di sini setelah pemindaian dimulai.</li>`;
+    });
+
+    window.addEventListener("beforeunload", () => { if (isStreaming) stop(); });
+    setInterval(tickTelemetry, 500);
+
     // Fetch model info before the user even starts, so the provider/class
     // count chips aren't blank on first paint.
     try {
-      const res = await fetch("/health");
+      const res = await fetch("/health", { credentials: "same-origin" });
       const info = await res.json();
       providerLabel.textContent = info.provider;
       classCountLabel.textContent = info.num_classes;
     } catch {
-      // backend not reachable yet — chips stay at defaults, /ws hello will fill them in
+      // backend not reachable yet — chips stay at defaults, /ws hello fills them
     }
     await unlockCameraLabelsThenList();
+    navigator.mediaDevices.addEventListener?.("devicechange", populateCameraList);
   })();
 })();

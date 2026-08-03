@@ -1,0 +1,44 @@
+# Secrets & local config
+backend/.env
+.env
+.env.*
+!.env.example
+!backend/.env.example
+
+# Detection evidence (can grow large, and it's operational data)
+backend/storage/
+
+# Local dev databases (prod uses MySQL — see backend/config.py)
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Node (frontend tooling, if introduced)
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store

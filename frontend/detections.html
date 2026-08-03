@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Riwayat FOD — FOD Sentry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+
+<div id="pageContent" hidden>
+
+  <div class="filters">
+    <div class="filter-field">
+      <label for="fFrom">Dari tanggal</label>
+      <input class="input slim" type="date" id="fFrom" />
+    </div>
+    <div class="filter-field">
+      <label for="fTo">Sampai tanggal</label>
+      <input class="input slim" type="date" id="fTo" />
+    </div>
+    <div class="filter-field">
+      <label for="fClass">Kelas objek</label>
+      <select class="select slim" id="fClass"><option value="">Semua</option></select>
+    </div>
+    <div class="filter-field">
+      <label for="fLevel">Level risiko</label>
+      <select class="select slim" id="fLevel">
+        <option value="">Semua</option>
+        <option>Critical</option>
+        <option>High</option>
+        <option>Medium</option>
+        <option>Low</option>
+        <option value="Very Low">Very Low</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label for="fStatus">Status inspeksi</label>
+      <select class="select slim" id="fStatus">
+        <option value="">Semua</option>
+        <option value="open">Open</option>
+        <option value="proses">Proses</option>
+        <option value="selesai">Selesai</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>&nbsp;</label>
+      <button class="secondary-btn" id="resetFilters">Reset</button>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Riwayat deteksi</h2>
+      <span class="count-badge" id="totalBadge">0</span>
+    </div>
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Objek</th>
+            <th class="num">Conf.</th>
+            <th class="num">Skor</th>
+            <th>Risiko</th>
+            <th>Status</th>
+            <th>Kamera</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="8" class="row-empty">Memuat…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <button class="icon-btn" id="prevPage">← Sebelumnya</button>
+      <span id="pageInfo">—</span>
+      <button class="icon-btn" id="nextPage">Berikutnya →</button>
+      <span class="spacer"></span>
+      <label class="filter-field" style="flex-direction:row;align-items:center;gap:7px">
+        <span style="font-size:11px;color:var(--text-faint)">Per halaman</span>
+        <select class="select slim" id="perPage" style="width:74px">
+          <option>20</option><option>50</option><option>100</option>
+        </select>
+      </label>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Detail modal ============ -->
+<div class="modal-backdrop" id="detailModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h3 id="detailTitle">Detail deteksi</h3>
+      <button class="close-btn" id="detailClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-foot">
+      <button class="danger-btn" id="deleteBtn" hidden>Hapus deteksi</button>
+      <button class="secondary-btn" id="detailCloseFoot">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/detections.js"></script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pengguna — FOD Sentry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+
+<div id="pageContent" hidden>
+
+  <section class="panel" style="margin-bottom:18px">
+    <div class="panel-head">
+      <h2>Pengguna</h2>
+      <button class="primary-btn" id="addUserBtn">+ Tambah pengguna</button>
+    </div>
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Nama lengkap</th>
+            <th>Peran</th>
+            <th>Status</th>
+            <th>Dibuat</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="userBody">
+          <tr><td colspan="6" class="row-empty">Memuat…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Bobot Severity — 31 kelas FOD</h2>
+      <span class="panel-note">1 = ringan · 5 = paling merusak mesin/roda</span>
+    </div>
+    <div class="panel-body">
+      <p class="hint" style="margin:0 0 14px">
+        Severity dipakai langsung oleh risk engine: <code>Risk = Likelihood × Severity</code>.
+        Perubahan berlaku untuk deteksi <strong>baru</strong> — skor yang sudah tersimpan tidak dihitung ulang.
+        Urutan <code>id</code> adalah kontrak dengan model <code>best.onnx</code> dan tidak bisa diubah.
+      </p>
+      <div class="sev-grid" id="sevGrid"></div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ User modal ============ -->
+<div class="modal-backdrop" id="userModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="userModalTitle">Tambah pengguna</h3>
+      <button class="close-btn" id="userClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="modal-body">
+      <label class="field-label" for="uUsername">Username</label>
+      <input class="input" id="uUsername" maxlength="50" autocomplete="off"
+             placeholder="huruf, angka, titik, garis bawah" />
+
+      <label class="field-label" for="uFullName">Nama lengkap</label>
+      <input class="input" id="uFullName" maxlength="100" autocomplete="off" />
+
+      <label class="field-label" for="uPassword">
+        Password <span class="field-value" id="uPasswordHint">minimal 6 karakter</span>
+      </label>
+      <input class="input" id="uPassword" type="password" autocomplete="new-password" />
+
+      <label class="field-label" for="uRole">Peran</label>
+      <select class="select" id="uRole">
+        <option value="petugas">Petugas — dashboard &amp; inspeksi</option>
+        <option value="admin">Admin — akses penuh</option>
+      </select>
+
+      <label class="check-row" style="margin-top:14px">
+        <input type="checkbox" id="uActive" checked />
+        Akun aktif (boleh login)
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="secondary-btn" id="userCancel">Batal</button>
+      <button class="primary-btn" id="userSave">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/users.js"></script>
+</body>
+</html>

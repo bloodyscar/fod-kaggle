@@ -1,49 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FOD Sentry — Live Runway Debris Detection</title>
+<title>Deteksi Live — FOD Sentry</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="assets/css/app.css" />
 </head>
 <body>
 
-<div class="app">
-
-  <!-- ============ TOP BAR ============ -->
-  <header class="topbar">
-    <div class="brand">
-      <svg class="brand-mark" width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M13 1 L24 7 V19 L13 25 L2 19 V7 Z" stroke="currentColor" stroke-width="1.6"/>
-        <path d="M13 8 L18 11 V17 L13 20 L8 17 V11 Z" fill="currentColor" opacity="0.85"/>
-      </svg>
-      <div class="brand-text">
-        <span class="brand-name">FOD&nbsp;SENTRY</span>
-        <span class="brand-sub">Runway Debris Detection</span>
-      </div>
-    </div>
-
-    <div class="topbar-status">
-      <div class="status-chip" id="connChip">
-        <span class="dot" id="connDot"></span>
-        <span id="connLabel">OFFLINE</span>
-      </div>
-      <div class="status-chip mono" id="providerChip">
-        <span class="chip-label">ENGINE</span>
-        <span id="providerLabel">—</span>
-      </div>
-      <div class="status-chip mono">
-        <span class="chip-label">CLASSES</span>
-        <span id="classCountLabel">31</span>
-      </div>
-    </div>
-  </header>
-
-  <!-- ============ MAIN ============ -->
-  <main class="main">
+<div id="pageContent" hidden>
+  <div class="live-main">
 
     <!-- ---- Video stage ---- -->
     <section class="stage-wrap">
@@ -56,8 +25,8 @@
             <path d="M15 8v3l4-2v6l-4-2v3H4V8h11Z"/>
             <path d="M2 3l20 18" stroke-width="1.3"/>
           </svg>
-          <p>No source connected</p>
-          <span>Choose a camera and press <strong>Start</strong> to begin scanning</span>
+          <p>Belum ada sumber terhubung</p>
+          <span>Pilih kamera lalu tekan <strong>Mulai</strong> untuk memindai</span>
         </div>
 
         <div class="stage-overlay-ui">
@@ -80,10 +49,10 @@
       <div class="eventlog-wrap">
         <div class="panel-head">
           <h2>Detection Log</h2>
-          <button id="clearLog" class="ghost-btn">Clear</button>
+          <button id="clearLog" class="ghost-btn">Bersihkan</button>
         </div>
         <ul class="eventlog" id="eventLog">
-          <li class="event-empty">Events will appear here once scanning starts.</li>
+          <li class="event-empty">Kejadian akan muncul di sini setelah pemindaian dimulai.</li>
         </ul>
       </div>
     </section>
@@ -92,21 +61,46 @@
     <aside class="rail">
 
       <section class="panel">
-        <div class="panel-head"><h2>Source</h2></div>
+        <div class="panel-head"><h2>Sumber</h2></div>
         <div class="panel-body">
-          <label class="field-label" for="cameraSelect">Camera</label>
+          <label class="field-label" for="cameraSelect">Kamera</label>
           <select id="cameraSelect" class="select"></select>
 
           <div class="btn-row">
-            <button id="startBtn" class="primary-btn">Start scanning</button>
+            <button id="startBtn" class="primary-btn">Mulai memindai</button>
             <button id="stopBtn" class="secondary-btn" disabled>Stop</button>
           </div>
-          <p class="hint" id="sourceHint">Works with your laptop's built-in camera or any external / USB webcam plugged into this machine.</p>
+          <p class="hint" id="sourceHint">
+            Bisa memakai kamera internal laptop atau webcam eksternal/USB yang tertancap di komputer ini.
+            Nama kamera yang dipilih ikut tersimpan pada tiap deteksi.
+          </p>
         </div>
       </section>
 
       <section class="panel">
-        <div class="panel-head"><h2>Detection Settings</h2></div>
+        <div class="panel-head">
+          <h2>Pre-processing</h2>
+          <span class="panel-note">diproses di server</span>
+        </div>
+        <div class="panel-body">
+          <label class="check-row">
+            <input type="checkbox" id="cbDenoise" />
+            Noise reduction <span class="panel-note">— hujan/kabut (±2 ms)</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" id="cbClahe" />
+            Contrast CLAHE <span class="panel-note">— silau/gelap (±5 ms)</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" id="cbSharpen" />
+            Sharpening <span class="panel-note">— tepi objek (±3 ms)</span>
+          </label>
+          <p class="hint">Menambah latensi inference sedikit. Aktifkan hanya bila kondisi citra memang buruk.</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Pengaturan Deteksi</h2></div>
         <div class="panel-body">
 
           <label class="field-label">
@@ -122,20 +116,20 @@
           <input type="range" id="iouSlider" min="0.10" max="0.90" step="0.01" value="0.45" class="slider" />
 
           <label class="field-label">
-            Upload resolution
+            Resolusi upload
             <span class="field-value mono" id="resVal">640px</span>
           </label>
           <input type="range" id="resSlider" min="320" max="960" step="32" value="640" class="slider" />
-          <p class="hint">The model always runs at a fixed 960×960. Lowering this only shrinks what's sent over the network — useful on slow connections.</p>
+          <p class="hint">Model selalu berjalan pada 960×960. Menurunkan nilai ini hanya mengecilkan data yang dikirim — berguna pada koneksi lambat.</p>
 
           <label class="field-label">
-            JPEG quality
+            Kualitas JPEG
             <span class="field-value mono" id="qualVal">0.75</span>
           </label>
           <input type="range" id="qualSlider" min="0.4" max="0.95" step="0.05" value="0.75" class="slider" />
 
           <label class="field-label">
-            Max send rate
+            Batas kirim
             <span class="field-value mono" id="fpsCapVal">20 fps</span>
           </label>
           <input type="range" id="fpsCapSlider" min="5" max="30" step="1" value="20" class="slider" />
@@ -144,20 +138,26 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Active Detections</h2>
+          <h2>Deteksi Aktif</h2>
           <span class="count-badge" id="activeCount">0</span>
         </div>
         <div class="panel-body">
           <ul class="detection-list" id="detectionList">
-            <li class="det-empty">No objects currently detected.</li>
+            <li class="det-empty">Belum ada objek terdeteksi.</li>
           </ul>
+          <p class="hint">
+            Baris tersimpan ke database maksimal 1× per kelas per 10 detik
+            (anti-duplikat), memakai confidence tertinggi pada frame tersebut.
+          </p>
         </div>
       </section>
 
     </aside>
-  </main>
+  </div>
 </div>
 
-<script src="app.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/live.js"></script>
 </body>
 </html>

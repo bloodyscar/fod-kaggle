@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Masuk — FOD Sentry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+
+<div class="login-wrap">
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <div class="brand">
+      <svg class="brand-mark" width="30" height="30" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 1 L24 7 V19 L13 25 L2 19 V7 Z" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M13 8 L18 11 V17 L13 20 L8 17 V11 Z" fill="currentColor" opacity="0.85"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">FOD&nbsp;SENTRY</span>
+        <span class="brand-sub">Runway Debris Detection</span>
+      </div>
+    </div>
+
+    <h1>Masuk</h1>
+    <p class="hint">Bandara Douw Aturure — Nabire</p>
+
+    <div class="login-error" id="loginError"></div>
+
+    <div class="login-field">
+      <label for="username">Username</label>
+      <input class="input" type="text" id="username" name="username"
+             autocomplete="username" required autofocus />
+    </div>
+
+    <div class="login-field">
+      <label for="password">Password</label>
+      <input class="input" type="password" id="password" name="password"
+             autocomplete="current-password" required />
+    </div>
+
+    <button type="submit" class="primary-btn" id="submitBtn">Masuk</button>
+
+    <div class="login-foot">
+      Akun bawaan: <code>admin / admin123</code> · <code>petugas / petugas123</code><br>
+      Ganti password bawaan sebelum dipakai di lapangan.
+    </div>
+  </form>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script>
+(() => {
+  "use strict";
+  const form = document.getElementById("loginForm");
+  const errorBox = document.getElementById("loginError");
+  const submitBtn = document.getElementById("submitBtn");
+
+  // Only allow same-page redirects — never bounce to an attacker-supplied URL.
+  function nextPage() {
+    const raw = new URLSearchParams(location.search).get("next") || "dashboard.html";
+    return /^[\w.-]+\.html(\?[\w=&.%-]*)?$/.test(raw) ? raw : "dashboard.html";
+  }
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.add("show");
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorBox.classList.remove("show");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Memeriksa…";
+    try {
+      await API.post("/auth/login", {
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value,
+      });
+      location.replace(nextPage());
+    } catch (err) {
+      showError(err.message || "Gagal masuk.");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Masuk";
+      document.getElementById("password").select();
+    }
+  });
+
+  // Already signed in? Skip the form. silent401 so no redirect loop.
+  API.request("/auth/me", { silent401: true })
+    .then(() => location.replace(nextPage()))
+    .catch(() => { /* not logged in — stay here */ });
+})();
+</script>
+</body>
+</html>
