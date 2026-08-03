@@ -1,9 +1,9 @@
 """
-FOD Sentry — inference server
-==============================
+FOD Sentry — inference server + web admin API
+=============================================
 FastAPI backend that streams live webcam frames from the browser over a
-WebSocket, runs them through the FOD-A YOLOv8 ONNX model, and streams
-detections back in real time.
+WebSocket, runs them through the FOD-A YOLOv8 ONNX model, streams detections
+back in real time, and records the noteworthy ones (with a risk score) to MySQL.
 
 Design goals for smoothness / low latency:
   * The socket has two independent loops: a `receiver` that just stores the
@@ -13,186 +13,82 @@ Design goals for smoothness / low latency:
     frame, so the stream never "catches up" through a backlog.
   * Inference runs in a ThreadPoolExecutor so the asyncio event loop is never
     blocked and can keep receiving/sending concurrently.
+  * DB writes go to their own single-worker pool and are never awaited, so a
+    slow INSERT can't add latency to the next frame.
   * ONNXRuntime will use CUDA automatically if it's available, otherwise CPU.
 """
 
 import asyncio
 import json
-import os
 import struct
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
-import onnxruntime as ort
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-# --------------------------------------------------------------------------
-# Config
-# --------------------------------------------------------------------------
-
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "best.onnx"
-FRONTEND_DIR = BASE_DIR.parent / "frontend"
-
-INPUT_SIZE = 960          # model is exported with a static 960x960 input
-LETTERBOX_COLOR = (114, 114, 114)
-
-DEFAULT_CONF = 0.35
-DEFAULT_IOU = 0.45
-
-CLASS_NAMES = {
-    0: "AdjustableClamp", 1: "AdjustableWrench", 2: "Battery", 3: "Bolt",
-    4: "BoltNutSet", 5: "BoltWasher", 6: "ClampPart", 7: "Cutter",
-    8: "FuelCap", 9: "Hammer", 10: "Hose", 11: "Label", 12: "LuggagePart",
-    13: "LuggageTag", 14: "MetalPart", 15: "MetalSheet", 16: "Nail",
-    17: "Nut", 18: "PaintChip", 19: "Pen", 20: "PlasticPart", 21: "Pliers",
-    22: "Rock", 23: "Screw", 24: "Screwdriver", 25: "SodaCan", 26: "Tape",
-    27: "Washer", 28: "Wire", 29: "Wood", 30: "Wrench",
-}
-
-# --------------------------------------------------------------------------
-# Model session
-# --------------------------------------------------------------------------
-
-
-def build_session() -> ort.InferenceSession:
-    available = ort.get_available_providers()
-    providers = []
-    if "CUDAExecutionProvider" in available:
-        providers.append("CUDAExecutionProvider")
-    providers.append("CPUExecutionProvider")
-
-    so = ort.SessionOptions()
-    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    so.intra_op_num_threads = max(1, (os.cpu_count() or 4) - 1)
-    so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-
-    return ort.InferenceSession(str(MODEL_PATH), sess_options=so, providers=providers)
-
-
-session = build_session()
-INPUT_NAME = session.get_inputs()[0].name
-ACTIVE_PROVIDER = session.get_providers()[0]
+import store
+from auth import authenticate_ws
+from classes import CLASS_NAMES
+from config import FRONTEND_DIR, STORAGE_DIR, settings
+from database import SessionLocal, create_all
+from inference import ACTIVE_PROVIDER, INPUT_SIZE, run_inference
+from preprocess import apply_chain
+from routers import auth as auth_router
+from routers import dashboard as dashboard_router
+from routers import detections as detections_router
+from routers import inspections as inspections_router
+from routers import users as users_router
 
 # A small dedicated pool keeps inference off the event loop. 1-2 workers is
 # usually best: onnxruntime already parallelizes a single inference across
 # intra_op_num_threads, so stacking many Python threads on top just adds
 # contention rather than throughput.
 executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ort-infer")
-
-# --------------------------------------------------------------------------
-# Pre / post processing
-# --------------------------------------------------------------------------
+# Separate pool so a DB write never queues behind (or ahead of) an inference.
+db_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-writer")
 
 
-def letterbox(img: np.ndarray, size: int = INPUT_SIZE):
-    h, w = img.shape[:2]
-    scale = min(size / h, size / w)
-    nh, nw = int(round(h * scale)), int(round(w * scale))
-    resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
-
-    canvas = np.full((size, size, 3), LETTERBOX_COLOR, dtype=np.uint8)
-    top = (size - nh) // 2
-    left = (size - nw) // 2
-    canvas[top:top + nh, left:left + nw] = resized
-    return canvas, scale, left, top
-
-
-def preprocess(frame: np.ndarray):
-    canvas, scale, left, top = letterbox(frame, INPUT_SIZE)
-    img = canvas[:, :, ::-1].astype(np.float32) / 255.0   # BGR -> RGB, 0..1
-    img = img.transpose(2, 0, 1)[None, ...]                # HWC -> NCHW
-    return np.ascontiguousarray(img), scale, left, top
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        create_all()
+        print("[startup] database ready")
+    except Exception as exc:  # noqa: BLE001
+        # The live page and /health still work without a DB; the dashboard
+        # endpoints will surface the error instead of the app refusing to boot.
+        print(f"[startup] WARNING database unavailable: {exc}")
+    yield
+    executor.shutdown(wait=False)
+    db_executor.shutdown(wait=False)
 
 
-def postprocess(output, scale, left, top, orig_w, orig_h, conf_thres, iou_thres):
-    preds = output[0][0].T   # (1,35,18900) -> (18900,35)
+app = FastAPI(title="FOD Sentry", lifespan=lifespan)
 
-    boxes_xywh = preds[:, :4]
-    class_scores = preds[:, 4:]
-    class_ids = np.argmax(class_scores, axis=1)
-    confs = class_scores[np.arange(class_scores.shape[0]), class_ids]
-
-    mask = confs >= conf_thres
-    if not np.any(mask):
-        return []
-
-    boxes_xywh = boxes_xywh[mask]
-    confs = confs[mask]
-    class_ids = class_ids[mask]
-
-    cx, cy, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
-    x1 = cx - w / 2
-    y1 = cy - h / 2
-    x2 = cx + w / 2
-    y2 = cy + h / 2
-
-    # undo letterbox padding/scale to map back to the original frame
-    x1 = (x1 - left) / scale
-    y1 = (y1 - top) / scale
-    x2 = (x2 - left) / scale
-    y2 = (y2 - top) / scale
-
-    x1 = np.clip(x1, 0, orig_w)
-    y1 = np.clip(y1, 0, orig_h)
-    x2 = np.clip(x2, 0, orig_w)
-    y2 = np.clip(y2, 0, orig_h)
-
-    boxes_for_nms = np.stack([x1, y1, x2 - x1, y2 - y1], axis=1)
-
-    results = []
-    for cid in np.unique(class_ids):
-        cls_mask = class_ids == cid
-        cls_boxes = boxes_for_nms[cls_mask]
-        cls_confs = confs[cls_mask]
-
-        idxs = cv2.dnn.NMSBoxes(
-            cls_boxes.tolist(), cls_confs.tolist(), conf_thres, iou_thres
-        )
-        if len(idxs) == 0:
-            continue
-        idxs = np.array(idxs).flatten()
-
-        for i in idxs:
-            bx, by, bw, bh = cls_boxes[i]
-            results.append({
-                "x1": float(bx / orig_w),
-                "y1": float(by / orig_h),
-                "x2": float((bx + bw) / orig_w),
-                "y2": float((by + bh) / orig_h),
-                "conf": float(cls_confs[i]),
-                "class_id": int(cid),
-                "class_name": CLASS_NAMES.get(int(cid), str(cid)),
-            })
-
-    results.sort(key=lambda d: -d["conf"])
-    return results
-
-
-def run_inference(frame: np.ndarray, conf_thres: float, iou_thres: float):
-    orig_h, orig_w = frame.shape[:2]
-    tensor, scale, left, top = preprocess(frame)
-    outputs = session.run(None, {INPUT_NAME: tensor})
-    return postprocess(outputs, scale, left, top, orig_w, orig_h, conf_thres, iou_thres)
-
-
-# --------------------------------------------------------------------------
-# FastAPI app
-# --------------------------------------------------------------------------
-
-app = FastAPI(title="FOD Sentry Inference Server")
+# Explicit origin list: "*" together with credentials is rejected by browsers,
+# and we authenticate with a cookie.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+for r in (
+    auth_router.router,
+    users_router.router,
+    detections_router.router,
+    inspections_router.router,
+    dashboard_router.router,
+):
+    app.include_router(r, prefix="/api")
 
 
 @app.get("/health")
@@ -203,21 +99,55 @@ async def health():
         "input_size": INPUT_SIZE,
         "num_classes": len(CLASS_NAMES),
         "classes": CLASS_NAMES,
-        "default_conf": DEFAULT_CONF,
-        "default_iou": DEFAULT_IOU,
+        "default_conf": settings.default_conf,
+        "default_iou": settings.default_iou,
     }
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    # Registered before the StaticFiles mount, so it wins over it.
+    return RedirectResponse(url="/dashboard.html")
+
+
+def _infer_with_preprocess(frame, conf, iou, flags):
+    """Pre-processing + inference in one executor hop (plan §4.4)."""
+    if any(flags):
+        frame = apply_chain(
+            frame,
+            use_denoise=flags[0], use_clahe=flags[1], use_sharpen=flags[2],
+        )
+    return frame, run_inference(frame, conf, iou)
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
+
+    # Auth from the handshake cookie. We accept first so the browser actually
+    # surfaces the close code instead of a generic handshake failure.
+    with SessionLocal() as db:
+        try:
+            user = authenticate_ws(ws, db)
+        except Exception:      # DB down — don't hand out an unauthenticated stream
+            user = None
+    if user is None:
+        await ws.close(code=4401, reason="Sesi tidak valid, silakan login ulang")
+        return
+
     loop = asyncio.get_event_loop()
+    store.reset_cooldown()
 
     state = {
         "latest": None,       # (client_ts: float, jpeg_bytes: bytes)
         "processing": False,
-        "conf": DEFAULT_CONF,
-        "iou": DEFAULT_IOU,
+        "conf": settings.default_conf,
+        "iou": settings.default_iou,
+        "denoise": False,
+        "clahe": False,
+        "sharpen": False,
+        "camera_label": None,
+        "db_busy": False,
     }
     stop_flag = {"stop": False}
 
@@ -226,6 +156,7 @@ async def websocket_endpoint(ws: WebSocket):
         "provider": ACTIVE_PROVIDER,
         "input_size": INPUT_SIZE,
         "classes": CLASS_NAMES,
+        "user": {"username": user.username, "role": user.role},
     }))
 
     async def receiver():
@@ -249,12 +180,21 @@ async def websocket_endpoint(ws: WebSocket):
                             state["conf"] = max(0.01, min(0.99, float(msg["conf"])))
                         if "iou" in msg:
                             state["iou"] = max(0.05, min(0.95, float(msg["iou"])))
+                        for flag in ("denoise", "clahe", "sharpen"):
+                            if flag in msg:
+                                state[flag] = bool(msg[flag])
+                        if "camera_label" in msg:
+                            label = str(msg["camera_label"] or "")[:120]
+                            state["camera_label"] = label or None
         except WebSocketDisconnect:
             pass
         except Exception:
             pass
         finally:
             stop_flag["stop"] = True
+
+    def _release_db(_fut):
+        state["db_busy"] = False
 
     async def processor():
         while not stop_flag["stop"]:
@@ -272,10 +212,28 @@ async def websocket_endpoint(ws: WebSocket):
                 if frame is None:
                     continue
 
-                detections = await loop.run_in_executor(
-                    executor, run_inference, frame, state["conf"], state["iou"]
+                flags = (state["denoise"], state["clahe"], state["sharpen"])
+                processed, detections = await loop.run_in_executor(
+                    executor, _infer_with_preprocess,
+                    frame, state["conf"], state["iou"], flags,
                 )
                 infer_ms = (time.perf_counter() - t0) * 1000.0
+
+                # Risk badge on every box the operator sees…
+                try:
+                    store.annotate_risk(detections)
+                except Exception:
+                    pass    # DB unreachable: stream on without badges
+
+                # …but only cooldown survivors get written. Fire and forget, and
+                # never more than one write in flight.
+                if detections and not state["db_busy"]:
+                    state["db_busy"] = True
+                    fut = loop.run_in_executor(
+                        db_executor, store.persist_detections,
+                        processed, detections, state["camera_label"],
+                    )
+                    fut.add_done_callback(_release_db)
 
                 await ws.send_text(json.dumps({
                     "type": "detections",
@@ -306,6 +264,7 @@ async def websocket_endpoint(ws: WebSocket):
             pass
 
 
-# Serve the static frontend (index.html, style.css, app.js) at "/"
+# Serve the static frontend (login/dashboard/live/... + assets) at "/".
+# Mounted last so /api, /health, /ws and "/" keep priority.
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
