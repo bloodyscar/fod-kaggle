@@ -8,6 +8,10 @@ backend/.env
 # Detection evidence (can grow large, and it's operational data)
 backend/storage/
 
+# FOD-A dataset from Kaggle (33.793 frames, ~412 MB) — downloaded, not authored.
+# See README §9.1 for how to fetch it.
+VOC2007/
+
 # Local dev databases (prod uses MySQL — see backend/config.py)
 *.db
 *.sqlite

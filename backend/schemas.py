@@ -172,3 +172,44 @@ class WeatherOut(BaseModel):
     observed_at: str | None = None
     stale: bool = False
     error: str | None = None
+
+
+# --------------------------------------------------------------- dataset ----
+# The FOD-A gallery. Labels come from best.onnx, not from the dataset's VOC XML.
+class DatasetSample(BaseModel):
+    file: str
+    class_id: int
+    class_name: str
+    conf: float
+    box: list[float] = Field(default_factory=list)   # x1,y1,x2,y2 normalised 0-1
+    width: int
+    height: int
+    objects: int = 0
+
+
+class DatasetClassCount(BaseModel):
+    class_id: int
+    class_name: str
+    count: int
+
+
+class DatasetStatus(BaseModel):
+    status: str                    # idle | indexing | ready | error | missing
+    scanned: int = 0               # frames run through the model so far
+    labelled: int = 0
+    total_images: int = 0          # frames in the dataset (33.793)
+    sampled: int = 0               # frames kept in the gallery
+    per_class: int = 20
+    scan_limit: int = 0
+    min_conf: float = 0.0
+    error: str | None = None
+    updated_at: str | None = None
+
+
+class DatasetPage(BaseModel):
+    items: list[DatasetSample]
+    total: int
+    limit: int
+    offset: int
+    status: DatasetStatus
+    classes: list[DatasetClassCount]

@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+import dataset_index
 import store
 from auth import authenticate_ws
 from classes import CLASS_NAMES
@@ -41,6 +42,7 @@ from inference import ACTIVE_PROVIDER, INPUT_SIZE, run_inference
 from preprocess import apply_chain
 from routers import auth as auth_router
 from routers import dashboard as dashboard_router
+from routers import dataset as dataset_router
 from routers import detections as detections_router
 from routers import inspections as inspections_router
 from routers import users as users_router
@@ -64,6 +66,9 @@ async def lifespan(_: FastAPI):
         # The live page and /health still work without a DB; the dashboard
         # endpoints will surface the error instead of the app refusing to boot.
         print(f"[startup] WARNING database unavailable: {exc}")
+    # Reuse a previous run's dataset sample index. Indexing itself is lazy —
+    # the first request to /api/dataset kicks it off, so boot stays fast.
+    dataset_index.load_cached()
     yield
     executor.shutdown(wait=False)
     db_executor.shutdown(wait=False)
@@ -87,6 +92,7 @@ for r in (
     detections_router.router,
     inspections_router.router,
     dashboard_router.router,
+    dataset_router.router,
 ):
     app.include_router(r, prefix="/api")
 

@@ -13,6 +13,7 @@
     { href: "live.html",        icon: "◉", label: "Deteksi Live" },
     { href: "detections.html",  icon: "☰", label: "Riwayat FOD" },
     { href: "inspections.html", icon: "✓", label: "Inspeksi" },
+    { href: "dataset.html",     icon: "▦", label: "Dataset" },
     { href: "users.html",       icon: "⚙", label: "Pengguna", adminOnly: true },
   ];
 

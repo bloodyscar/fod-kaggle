@@ -16,6 +16,15 @@ FRONTEND_DIR = BASE_DIR.parent / "frontend"
 MODEL_PATH = BASE_DIR / "best.onnx"
 STORAGE_DIR = BASE_DIR / "storage" / "detections"
 
+# FOD-A Pascal-VOC dataset (33.793 frames), downloaded from Kaggle:
+#   imenesabeur/dataset-for-foreign-object-debris-in-airports
+# Only JPEGImages is read; the VOC XML labels are ignored on purpose — the
+# Dataset page labels each frame with best.onnx, so what it shows is what our
+# own model sees. Gitignored: 412 MB is not repo material.
+DATASET_DIR = BASE_DIR.parent / "VOC2007"
+DATASET_IMAGES_DIR = DATASET_DIR / "JPEGImages"
+DATASET_INDEX_PATH = BASE_DIR / "storage" / "dataset_index.json"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -56,6 +65,19 @@ class Settings(BaseSettings):
     weather_timezone: str = "Asia/Jayapura"
     weather_ttl_seconds: int = 600         # 10 minutes
     weather_timeout_seconds: float = 6.0
+
+    # ---- Dataset gallery ---------------------------------------------------
+    # How many sample frames to keep per FOD class. 20 x 31 = 620 thumbnails,
+    # which is plenty to eyeball a class and cheap to serve.
+    dataset_per_class: int = 20
+    # Hard stop on the indexer: it runs best.onnx on one frame at a time, so
+    # scanning all 33.793 would take hours. It quits early anyway once every
+    # class is full.
+    dataset_scan_limit: int = 6000
+    # A frame is only filed under a class if the model is at least this sure.
+    dataset_min_conf: float = 0.45
+    # Breather between frames so indexing never starves live detection.
+    dataset_index_sleep: float = 0.01
 
     @property
     def origins(self) -> list[str]:

@@ -22,16 +22,19 @@ fod-sentry/
 │   ├── risk.py            # Risk = Likelihood × Severity
 │   ├── store.py           # cooldown + writing detections from the live stream
 │   ├── weather.py         # Open-Meteo proxy + 10-minute cache
-│   ├── routers/           # auth · users · detections · inspections · dashboard
+│   ├── dataset_index.py   # samples the FOD-A dataset, 20 frames/class via best.onnx
+│   ├── routers/           # auth · users · detections · inspections · dashboard · dataset
 │   ├── seed.py            # default users, 31 severity rows, demo data
 │   ├── storage/detections/# annotated evidence JPEGs (gitignored)
 │   ├── best.onnx          # your model (copied in)
 │   ├── requirements.txt
 │   └── .env               # NOT committed — copy from .env.example
-└── frontend/
-    ├── login.html · dashboard.html · live.html
-    ├── detections.html · inspections.html · users.html
-    └── assets/css/app.css · assets/js/*.js
+├── frontend/
+│   ├── login.html · dashboard.html · live.html
+│   ├── detections.html · inspections.html · users.html · dataset.html
+│   └── assets/css/app.css · assets/js/*.js
+└── VOC2007/               # FOD-A dataset from Kaggle (gitignored, see §9.1)
+    └── JPEGImages/        # 33.793 frames — the Dataset page samples these
 ```
 
 ---
@@ -118,9 +121,11 @@ there's nothing else to start. You land on the login page.
 | Live detection (`/ws`) | ✅ | ✅ |
 | Read detection history + detail + snapshot | ✅ | ✅ |
 | Update inspection status / notes | ✅ | ✅ |
+| Browse the dataset gallery | ✅ | ✅ |
 | Delete a detection | ✅ | ❌ |
 | User CRUD | ✅ | ❌ |
 | Edit FOD severity weights | ✅ | ❌ |
+| Re-index the dataset gallery | ✅ | ❌ |
 
 Enforced **server-side** on every endpoint. Hiding the *Pengguna* menu item is
 only a convenience — a `petugas` who types the URL gets a 403 from the API.
@@ -253,6 +258,10 @@ All REST endpoints are under `/api` and require the login cookie.
 | PATCH | `/api/inspections/{id}` | A P | change `status`, `notes`, `handled_by` |
 | GET | `/api/notifications` | A P | 10 open High/Critical alerts + `unread_count` |
 | GET | `/api/weather` | A P | Nabire weather (Open-Meteo, cached 10 min) |
+| GET | `/api/dataset` | A P | sample dataset frames (`class_name`, `limit`, `offset`) + indexer status |
+| GET | `/api/dataset/status` | A P | indexer progress only (cheap poll) |
+| GET | `/api/dataset/image/{file}` | A P | one dataset frame JPEG |
+| POST | `/api/dataset/reindex` | **A** | drop the sample index and scan again |
 | GET/POST/PATCH/DELETE | `/api/users`, `/api/users/{id}` | **A** | user CRUD |
 | GET | `/api/fod-classes` | A P | 31 classes + severity weights |
 | PATCH | `/api/fod-classes/{id}` | **A** | change a severity weight |
@@ -294,6 +303,90 @@ detection.
 
 ---
 
+## 9. Dataset gallery (menu *Dataset*)
+
+The **Dataset** page browses the FOD-A training set the model came from, so you
+can eyeball what each of the 31 classes actually looks like — and what
+`best.onnx` calls them.
+
+### 9.1 Getting the data
+
+The dataset is **not** in the repository (33.793 frames, ~412 MB — `VOC2007/` is
+gitignored). Download it from Kaggle:
+
+```python
+# pip install kagglehub
+import kagglehub
+path = kagglehub.dataset_download(
+    "imenesabeur/dataset-for-foreign-object-debris-in-airports"
+)
+print(path)   # .../versions/1/FODPascalVOCFormat-V.2.1/VOC2007
+```
+
+No Kaggle API token is needed — the dataset is public. Copy (or symlink) the
+`VOC2007` folder to the **project root**, so the layout is:
+
+```
+fod-sentry/
+├── VOC2007/
+│   ├── JPEGImages/     # 33.793 frames, 300x300  ← the only folder we read
+│   ├── Annotations/    # VOC XML — deliberately ignored, see below
+│   └── ImageSets/
+├── backend/
+└── frontend/
+```
+
+Without it the page still loads and says the folder is missing; nothing else
+breaks.
+
+### 9.2 Why the labels come from the model, not the XML
+
+The dataset ships Pascal-VOC XML labels, but the gallery ignores them and runs
+**`best.onnx`** on each frame instead. The point of the page is to show what
+*our* model sees, which makes it a quick sanity check on the deployed weights:
+a class whose samples look wrong is a class the model is weak on. Each tile
+shows the predicted class and confidence; clicking one draws the predicted box
+over the frame.
+
+### 9.3 Why it shows a sample, not 33.793 images
+
+Running the model over the whole set would take hours, and no browser wants
+33.793 thumbnails. So `backend/dataset_index.py` keeps **20 frames per class**
+(620 total) and the page pages through that with `limit`/`offset`. The header
+always states the full frame count and how many are *not* shown.
+
+Two details make the sampling cheap and useful:
+
+- **Early exit.** Indexing stops as soon as every class has its 20 frames, or
+  after `DATASET_SCAN_LIMIT` frames — whichever comes first.
+- **Strided walk.** Consecutive filenames are consecutive *video frames of the
+  same object* (the VOC XML carries a `track_id`), so a sequential scan would
+  fill one class and starve the rest. The indexer walks the file list in a fixed
+  coprime stride instead — deterministic, resumable, and it spreads the scan
+  across the whole dataset. In practice the first handful of frames already hit
+  a different class each.
+
+Indexing starts **lazily** on the first request to `/api/dataset` and runs on a
+background thread, so server boot stays fast and live detection keeps priority
+(`DATASET_INDEX_SLEEP` is the breather between frames). The result is cached in
+`backend/storage/dataset_index.json`, so it is built once; a run interrupted
+half-way resumes where it stopped. While it works, the page polls every 4 s and
+fills in.
+
+Tuning (all optional, `backend/.env`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `DATASET_PER_CLASS` | `20` | frames kept per class |
+| `DATASET_SCAN_LIMIT` | `6000` | hard stop on frames scanned |
+| `DATASET_MIN_CONF` | `0.45` | below this the frame is skipped, not filed |
+| `DATASET_INDEX_SLEEP` | `0.01` | seconds between frames |
+
+Replaced `best.onnx`? An admin can hit **Indeks ulang** on the page (or
+`POST /api/dataset/reindex`) to rebuild the sample with the new weights.
+
+---
+
 ## Notes
 
 - The ONNX model was exported without built-in NMS (`nms=False` in its
@@ -309,4 +402,8 @@ detection.
   two blank boxes; to fix it permanently, download `chart.umd.min.js` into
   `frontend/assets/vendor/` and change the `<script src>` in `dashboard.html`.
 - `backend/.env` and `backend/storage/` are gitignored — secrets and evidence
-  images stay out of the repository.
+  images stay out of the repository. So is `VOC2007/`: the Kaggle dataset is
+  412 MB of downloaded data, not source (§9.1 has the one-liner to fetch it).
+- Dataset frames are served through `/api/dataset/image/{file}` rather than a
+  StaticFiles mount, for the same reason as detection snapshots — a mount would
+  also expose `Annotations/` and `ImageSets/`, and we only ever want the JPEGs.

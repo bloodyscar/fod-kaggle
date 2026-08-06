@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dataset — FOD Sentry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+
+<div id="pageContent" hidden>
+
+  <section class="panel" style="margin-bottom:18px">
+    <div class="panel-head">
+      <h2>Indeks sampel</h2>
+      <span class="count-badge" id="sampledBadge">0</span>
+    </div>
+    <div class="panel-body">
+      <p class="panel-note" id="indexNote">Memuat status indeks…</p>
+      <div class="index-bar"><div class="index-bar-fill" id="indexBarFill"></div></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="secondary-btn" id="refreshBtn">Muat ulang</button>
+        <button class="danger-btn" id="reindexBtn" hidden>Indeks ulang</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="filters">
+    <div class="filter-field">
+      <label for="fClass">Kelas FOD (label dari best.onnx)</label>
+      <select class="select slim" id="fClass" style="min-width:230px">
+        <option value="">Semua kelas</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>&nbsp;</label>
+      <button class="secondary-btn" id="resetFilters">Reset</button>
+    </div>
+  </div>
+
+  <div class="class-chips" id="classChips"></div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 id="galleryTitle">Contoh gambar</h2>
+      <span class="count-badge" id="totalBadge">0</span>
+    </div>
+    <div class="panel-body">
+      <div class="gallery-grid" id="galleryGrid">
+        <div class="row-empty">Memuat…</div>
+      </div>
+    </div>
+    <div class="pager">
+      <button class="icon-btn" id="prevPage">← Sebelumnya</button>
+      <span id="pageInfo">—</span>
+      <button class="icon-btn" id="nextPage">Berikutnya →</button>
+      <span class="spacer"></span>
+      <label class="filter-field" style="flex-direction:row;align-items:center;gap:7px">
+        <span style="font-size:11px;color:var(--text-faint)">Per halaman</span>
+        <select class="select slim" id="perPage" style="width:74px">
+          <option>20</option><option>40</option><option>60</option><option>100</option>
+        </select>
+      </label>
+    </div>
+  </section>
+</div>
+
+<!-- ============ Frame preview ============ -->
+<div class="modal-backdrop" id="frameModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h3 id="frameTitle">Gambar dataset</h3>
+      <button class="close-btn" id="frameClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="modal-body" id="frameBody"></div>
+    <div class="modal-foot">
+      <button class="secondary-btn" id="frameCloseFoot">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/dataset.js"></script>
+</body>
+</html>
