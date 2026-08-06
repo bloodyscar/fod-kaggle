@@ -20,6 +20,7 @@ Design goals for smoothness / low latency:
 
 import asyncio
 import json
+import re
 import struct
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -29,7 +30,7 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import dataset_index
@@ -270,7 +271,42 @@ async def websocket_endpoint(ws: WebSocket):
             pass
 
 
-# Serve the static frontend (login/dashboard/live/... + assets) at "/".
-# Mounted last so /api, /health, /ws and "/" keep priority.
+# --------------------------------------------------------------------------
+# HTML pages: served through here (not StaticFiles) so every local asset ref
+# gets a "?v=<mtime>" cache-buster stamped in on the fly. The browser then
+# re-fetches app.css / *.js the moment the file on disk changes, and keeps
+# using its cached copy otherwise. No build step, nothing to bump by hand.
+# --------------------------------------------------------------------------
+_ASSET_REF_RE = re.compile(r'((?:href|src)=")(assets/[^"?]+)(")')
+
+
+def _asset_version(rel_path: str) -> str:
+    """Cache-buster token for a frontend asset: its mtime, or 0 if missing."""
+    try:
+        return str(int((FRONTEND_DIR / rel_path).stat().st_mtime))
+    except OSError:
+        return "0"
+
+
+@app.get("/{page}.html", include_in_schema=False)
+async def serve_page(page: str):
+    path = FRONTEND_DIR / f"{page}.html"
+    if not path.is_file():
+        return HTMLResponse("Not Found", status_code=404)
+
+    html = _ASSET_REF_RE.sub(
+        lambda m: f"{m.group(1)}{m.group(2)}?v={_asset_version(m.group(2))}{m.group(3)}",
+        path.read_text(encoding="utf-8"),
+    )
+    # The HTML itself must never be cached, otherwise the stale copy would keep
+    # pointing at the old ?v= values and the whole scheme is moot.
+    return HTMLResponse(
+        html,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+# Serve the static frontend (assets + anything else) at "/".
+# Mounted last so /api, /health, /ws, "/" and the .html routes keep priority.
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
